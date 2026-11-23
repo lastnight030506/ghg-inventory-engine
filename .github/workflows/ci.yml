@@ -1,0 +1,80 @@
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" ruff pytest-cov
+
+      - name: Lint
+        run: ruff check src/ tests/
+
+      - name: Test with coverage gate
+        run: pytest tests/ --cov=ghg --cov-report=term-missing --cov-fail-under=90
+
+      - name: Pipeline runs and writes both reports
+        run: |
+          ghg inventory --out out
+          test -s out/emissions_report.md
+          test -s out/emissions_report.pdf
+          head -c 4 out/emissions_report.pdf | grep -q '%PDF'
+
+      - name: Scenario comparison runs
+        run: |
+          ghg scenario --out out | tee scenario.txt
+          grep -q "location-based" scenario.txt
+          test -s out/scenario_comparison.md
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t ghg-engine .
+      - name: Test suite inside the image
+        run: docker run --rm ghg-engine pytest -q
+      - name: Full pipeline inside the image
+        run: |
+          mkdir -p out
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/out:/app/out" ghg-engine
+          test -s out/emissions_report.pdf
+
+  # The README's headline numbers are regenerated from the committed data on every
+  # push and diffed against what is committed. If a factor edit changes the total,
+  # this fails rather than letting the docs drift from the code.
+  report-is-current:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Regenerate and compare
+        run: |
+          ghg inventory --out /tmp/fresh
+          python - <<'PY'
+          import re, sys, pathlib
+          def total(p):
+              text = pathlib.Path(p).read_text(encoding="utf-8")
+              return re.search(r"\*\*Total emissions:\*\* ([\d,]+\.\d+)", text).group(1)
+          fresh, committed = total("/tmp/fresh/emissions_report.md"), total("out/emissions_report.md")
+          print(f"fresh={fresh} committed={committed}")
+          if fresh != committed:
+              sys.exit(f"committed report is stale: regenerate out/ (fresh {fresh} vs committed {committed})")
+          PY

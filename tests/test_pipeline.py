@@ -110,3 +110,69 @@ def test_factors_subcommand_shows_citations(run_cli, capsys):
     out = capsys.readouterr().out
     assert "IPCC 2006" in out
     assert "Vietnam grid emission factor" in out
+
+
+def test_scenario_runs_on_shipped_data_and_writes_its_report(run_cli, tmp_path):
+    code = run_cli(
+        "scenario",
+        "--activity-old", str(ROOT / "data/activity/activity_2024.csv"),
+        "--activity-new", str(ROOT / "data/activity/activity_2025.csv"),
+        "--factors-old", str(ROOT / "data/factors/emission_factors_2024.csv"),
+        "--factors-new", str(ROOT / "data/factors/emission_factors.csv"),
+        "--out", str(tmp_path),
+    )
+    assert code == 0
+    md = tmp_path / "scenario_comparison.md"
+    assert md.exists()
+    text = md.read_text(encoding="utf-8")
+    assert "activity vs factor" in text
+    assert "location-based" in text.lower()
+    assert "must not be summed" in text
+
+
+def test_scenario_decomposition_in_the_report_reconciles_to_the_headline(run_cli, tmp_path):
+    """The per-source effects printed in the report must sum to the total change.
+
+    This is the end-to-end version of the decomposition identity: if the CLI wires
+    the wrong year or the wrong factor to a source, the printed parts stop adding
+    up to the printed whole.
+    """
+    run_cli(
+        "scenario",
+        "--activity-old", str(ROOT / "data/activity/activity_2024.csv"),
+        "--activity-new", str(ROOT / "data/activity/activity_2025.csv"),
+        "--factors-old", str(ROOT / "data/factors/emission_factors_2024.csv"),
+        "--factors-new", str(ROOT / "data/factors/emission_factors.csv"),
+        "--out", str(tmp_path),
+    )
+    text = (tmp_path / "scenario_comparison.md").read_text(encoding="utf-8")
+
+    import re
+
+    headline = re.search(r"\*\*Total change:\*\* ([+-][\d,]+\.\d+)", text)
+    assert headline, "no total change line"
+    total = float(headline.group(1).replace(",", ""))
+
+    # the decomposition table: activity | factor | interaction | sum
+    rows = re.findall(
+        r"\| `[^`]+` \| ([+-][\d,]+\.\d+) \| ([+-][\d,]+\.\d+) \| "
+        r"([+-][\d,]+\.\d+) \| ([+-][\d,]+\.\d+) \|",
+        text,
+    )
+    assert rows, "decomposition table not found"
+    parts = sum(float(r[3].replace(",", "")) for r in rows)
+    assert parts == pytest.approx(total, abs=0.05)
+    # and each row's own three effects sum to its printed total
+    for activity, factor, interaction, row_total in rows:
+        trio = sum(float(v.replace(",", "")) for v in (activity, factor, interaction))
+        assert trio == pytest.approx(float(row_total.replace(",", "")), abs=0.02)
+
+
+def test_scenario_rejects_instruments_larger_than_consumption(run_cli, tmp_path, capsys):
+    code = run_cli(
+        "scenario",
+        "--out", str(tmp_path),
+        "--instrument", "oversized", "999999", "0.0",
+    )
+    assert code == 1
+    assert "cannot exceed" in capsys.readouterr().err

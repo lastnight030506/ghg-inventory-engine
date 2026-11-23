@@ -250,3 +250,124 @@ def write_markdown(text: str, path: str | Path) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     return out
+
+
+def build_scenario_markdown(
+    *,
+    inv_old,
+    inv_new,
+    year_old: int,
+    year_new: int,
+    decompositions,
+    scope2,
+    site: str,
+) -> str:
+    """Year-over-year comparison with the factor/activity split made explicit."""
+    total_old = inv_old.total_tco2e
+    total_new = inv_new.total_tco2e
+    delta = total_new - total_old
+    pct = delta / total_old if total_old else 0.0
+
+    out: list[str] = []
+    add = out.append
+    add(f"# Scenario Comparison — {site}")
+    add("")
+    add(f"**{year_old} → {year_new}**  ")
+    add(f"**Total change:** {delta:+,.2f} tCO₂e ({pct:+.1%})  ")
+    add(
+        f"**Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')} "
+        "by `ghg-inventory-engine`"
+    )
+    add("")
+    add(
+        "A total that fell is not automatically a reduction. Part of any year-on-year "
+        "change comes from the emission factor being republished, not from anything the "
+        "plant did. The decomposition below separates the two."
+    )
+    add("")
+
+    add("## 1. Headline")
+    add("")
+    add(f"| Metric | {year_old} | {year_new} | Change |")
+    add("|---|---:|---:|---:|")
+    add(f"| Total | {total_old:,.2f} | {total_new:,.2f} | {delta:+,.2f} |")
+    for scope in sorted(set(inv_old.by_scope()) | set(inv_new.by_scope())):
+        a = inv_old.by_scope().get(scope, 0.0)
+        b = inv_new.by_scope().get(scope, 0.0)
+        add(f"| Scope {scope} | {a:,.2f} | {b:,.2f} | {b - a:+,.2f} |")
+    add("")
+
+    add("## 2. Why it moved: activity vs factor")
+    add("")
+    add(
+        "The change in each source is split into three terms that sum exactly to the "
+        "observed difference:"
+    )
+    add("")
+    add("```")
+    add("activity_effect = (Q_new - Q_old) x EF_old      what the plant consumed")
+    add("factor_effect   = Q_old x (EF_new - EF_old)      what the factor register said")
+    add("interaction     = (Q_new - Q_old) x (EF_new - EF_old)")
+    add("```")
+    add("")
+    add("| Source | Activity | Factor | Interaction | Sum | Driver |")
+    add("|---|---:|---:|---:|---:|---|")
+    for d, driver in decompositions:
+        add(
+            f"| `{d.source}` | {d.activity_effect:+,.2f} | {d.factor_effect:+,.2f} | "
+            f"{d.interaction:+,.2f} | {d.total_change:+,.2f} | {driver} |"
+        )
+    add("")
+
+    factor_driven = [d for d, driver in decompositions if driver == "factor"]
+    if factor_driven:
+        total_factor = sum(d.factor_effect for d in factor_driven)
+        add(
+            f"**{len(factor_driven)} source(s) moved for factor reasons**, contributing "
+            f"{total_factor:+,.2f} tCO₂e. None of that is a physical reduction and it must "
+            "not be reported as one."
+        )
+        add("")
+
+    add("## 3. Scope 2: location-based and market-based")
+    add("")
+    add(
+        "The GHG Protocol Scope 2 Guidance requires both figures where contractual "
+        "instruments exist. They answer different questions and **must not be summed or "
+        "used interchangeably**."
+    )
+    add("")
+    add("| Method | tCO₂e | What it measures |")
+    add("|---|---:|---|")
+    add(
+        f"| Location-based | {scope2.location_tco2e:,.2f} | "
+        "average intensity of the grid the plant draws from |"
+    )
+    add(
+        f"| Market-based | {scope2.market_tco2e:,.2f} | "
+        "the contracts the plant holds, plus residual grid for the rest |"
+    )
+    add("")
+    add(f"*{scope2.describe()}*")
+    add("")
+    if scope2.market_tco2e < scope2.location_tco2e * 0.999 and not scope2.instruments:
+        add(
+            "> The market-based figure is lower with no instruments behind it. That is a "
+            "reporting error, not a reduction: a residual-mix factor below the grid average "
+            "needs documentary support."
+        )
+        add("")
+
+    add("## 4. What this comparison does not tell you")
+    add("")
+    add("- **Neither total is restated.** A factor change is shown as a factor effect; nothing is rebased.")
+    add("- **Scope 3 covers inbound freight only** (category 4). Business travel and purchased goods are absent, so the total understates the value chain.")
+    add("- **The dispersion model is unaffected by year.** It screens one stack under one meteorology; a second year needs its own `data/stack.json`.")
+    add("")
+    add(
+        "**Not a compliance determination.** A verifier will also ask for the boundary "
+        "declaration, the production-volume denominator, and the evidence behind each "
+        "contractual instrument."
+    )
+    add("")
+    return "\n".join(out) + "\n"

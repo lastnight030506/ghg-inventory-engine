@@ -17,10 +17,11 @@ from pathlib import Path
 
 from .activity import ActivityError, load_activity
 from .dispersion import PlumeState, Stack, concentration_grid
-from .factors import FactorError, load_factors
+from .factors import MASS_TO_KG, FactorError, load_factors
 from .inventory import build_inventory
 from .plume_map import plume_footprint
-from .report import build_markdown, write_markdown
+from .report import build_markdown, build_scenario_markdown, write_markdown
+from .scenario import ContractualInstrument
 
 DEFAULT_ACTIVITY = "data/activity/activity_2025.csv"
 DEFAULT_FACTORS = "data/factors/emission_factors.csv"
@@ -133,6 +134,90 @@ def _run_dispersion(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_scenario(args: argparse.Namespace) -> int:
+    """Year-over-year decomposition plus the Scope 2 dual figure."""
+    from .scenario import Scope2Dual, annual_quantity, classify_change, decompose
+
+    records_old = load_activity(args.activity_old)
+    records_new = load_activity(args.activity_new)
+    register_old = load_factors(args.factors_old)
+    register_new = load_factors(args.factors_new)
+
+    inv_old = build_inventory(records_old, register_old)
+    inv_new = build_inventory(records_new, register_new)
+
+    year_old = min(r.year for r in records_old)
+    year_new = min(r.year for r in records_new)
+    print(f"scenario: {year_old} -> {year_new}")
+    print(f"  total {year_old}: {inv_old.total_tco2e:,.2f} tCO2e")
+    print(f"  total {year_new}: {inv_new.total_tco2e:,.2f} tCO2e")
+    delta = inv_new.total_tco2e - inv_old.total_tco2e
+    print(f"  change: {delta:+,.2f} tCO2e ({delta / inv_old.total_tco2e:+.1%})")
+
+    # Decompose every source that appears in both years, so the report can say
+    # which of the changes were the plant's and which were the factor's.
+    rows = []
+    for source in sorted(register_new):
+        q_old = annual_quantity(records_old, source, year_old)
+        q_new = annual_quantity(records_new, source, year_new)
+        if q_old == 0 and q_new == 0:
+            continue
+        f_old = _effective_factor(register_old, source)
+        f_new = _effective_factor(register_new, source)
+        d = decompose(source, q_old, q_new, f_old, f_new)
+        rows.append((d, classify_change(d)))
+
+    print()
+    print(f"{'source':<24}{'activity':>12}{'factor':>12}{'interaction':>13}{'driver':>12}")
+    for d, driver in rows:
+        print(
+            f"{d.source:<24}{d.activity_effect:>12,.2f}{d.factor_effect:>12,.2f}"
+            f"{d.interaction:>13,.2f}{driver:>12}"
+        )
+
+    s2 = Scope2Dual(
+        consumption_kwh=annual_quantity(records_new, "grid_electricity", year_new),
+        grid_factor_kg_per_kwh=_effective_factor(register_new, "grid_electricity"),
+        instruments=tuple(
+            ContractualInstrument(name, float(mwh), float(ef))
+            for name, mwh, ef in args.instrument
+        ),
+        residual_factor_kg_per_kwh=args.residual_factor,
+    )
+    print()
+    print("scope 2 methods (not to be summed):")
+    print(f"  location-based: {s2.location_tco2e:,.2f} tCO2e")
+    print(f"  market-based:   {s2.market_tco2e:,.2f} tCO2e")
+    print(f"  {s2.describe()}")
+
+    text = build_scenario_markdown(
+        inv_old=inv_old,
+        inv_new=inv_new,
+        year_old=year_old,
+        year_new=year_new,
+        decompositions=rows,
+        scope2=s2,
+        site=records_new[0].site,
+    )
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    path = write_markdown(text, out / "scenario_comparison.md")
+    print(f"\nmarkdown: {path}")
+    return 0
+
+
+def _effective_factor(register, source: str) -> float:
+    """The CO2e-weighted effective factor for a source, kg per activity unit.
+
+    A source can emit several gases; for a decomposition what matters is the
+    combined CO2e per unit, so the gases are folded into one number.
+    """
+    total = 0.0
+    for f in register[source]:
+        total += f.emission_factor * MASS_TO_KG[f.mass_unit] * f.gwp
+    return total
+
+
 def _show_factors(args: argparse.Namespace) -> int:
     register = load_factors(args.factors)
     for source, factors in sorted(register.items()):
@@ -177,6 +262,36 @@ def build_parser() -> argparse.ArgumentParser:
     fac = sub.add_parser("factors", help="print the factor register with citations")
     fac.add_argument("--factors", default=DEFAULT_FACTORS)
     fac.set_defaults(func=_show_factors)
+
+    scen = sub.add_parser(
+        "scenario",
+        help="year-over-year decomposition and location vs market-based Scope 2",
+        description=(
+            "Compares two reporting years and splits the change into an activity "
+            "effect and an emission-factor effect, then shows both Scope 2 methods "
+            "side by side. The two Scope 2 figures are never summed."
+        ),
+    )
+    scen.add_argument("--activity-old", default="data/activity/activity_2024.csv")
+    scen.add_argument("--activity-new", default="data/activity/activity_2025.csv")
+    scen.add_argument("--factors-old", default="data/factors/emission_factors_2024.csv")
+    scen.add_argument("--factors-new", default=DEFAULT_FACTORS)
+    scen.add_argument("--out", default=DEFAULT_OUT)
+    scen.add_argument(
+        "--instrument",
+        nargs=3,
+        action="append",
+        default=[],
+        metavar=("NAME", "MWH", "KG_PER_KWH"),
+        help="contractual instrument: name, MWh covered, its emission factor in kg CO2e/kWh",
+    )
+    scen.add_argument(
+        "--residual-factor",
+        type=float,
+        default=0.6187,
+        help="factor for consumption not covered by instruments, kg CO2e/kWh",
+    )
+    scen.set_defaults(func=_run_scenario)
     return parser
 
 
