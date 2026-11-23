@@ -1,5 +1,10 @@
 # GHG Inventory & Dispersion Engine
 
+[![ci](https://github.com/lastnight030506/ghg-inventory-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/lastnight030506/ghg-inventory-engine/actions/workflows/ci.yml)
+![tests](https://img.shields.io/badge/tests-102%20passing-brightgreen)
+![coverage](https://img.shields.io/badge/coverage-96%25-brightgreen)
+![python](https://img.shields.io/badge/python-3.12-blue)
+
 A GHG inventory tool for an exporting manufacturer that has to answer **two
 regulators with one stack**: the carbon it reports (EU CBAM, ISO 14064-1) and the
 air quality it causes downwind (local permitting). Most tools do one or the
@@ -13,8 +18,8 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/out:/app/out" ghg-engine
 ```
 
 Two commands and a clone. The first run prints the inventory to stdout and
-writes four files into `out/`: the Markdown report, the same report as PDF, and
-the two chart PNGs the report embeds. No spreadsheet, no API key, no network.
+writes the report to `out/` as Markdown and PDF, plus the chart PNGs the report
+embeds. No spreadsheet, no API key, no network.
 
 `--user` matters: the container runs unprivileged and a bind-mounted directory
 does not inherit the image's permissions, so without it the report is written as
@@ -27,6 +32,7 @@ uid 10001 and your own user cannot overwrite it on the next run.
 Committed in [`out/`](out/) so you can read the deliverable without building it:
 
 - [`emissions_report.md`](out/emissions_report.md) / [`emissions_report.pdf`](out/emissions_report.pdf) — the full report
+- [`scenario_comparison.md`](out/scenario_comparison.md) — year-over-year decomposition and the Scope 2 dual figure
 - [`plume_footprint.png`](out/plume_footprint.png) — the downwind concentration map
 - [`scope_breakdown.png`](out/scope_breakdown.png) — scope totals
 - [`monthly_trend.png`](out/monthly_trend.png) — monthly series
@@ -46,6 +52,7 @@ downwind, from a 25 g/s release at a 30 m stack in neutral air.
 | **Scope totals** | Scope 1 (combustion), Scope 2 (grid), Scope 3 (freight) | Same arithmetic as the ledger, so the headline is checkable by hand |
 | **Dispersion** | Gaussian plume, Pasquill–Gifford stability, Briggs σ | Ground reflection + mixing-lid reflection; the standard screening model |
 | **Footprint** | Contoured downwind concentration zone (µg/m³) | A single receptor answers "are we over the limit"; the map answers "who is" |
+| **Scenario** | Year-over-year split into activity vs factor effects; Scope 2 location vs market | A falling total caused by a factor update is not a reduction |
 | **Report** | Markdown + PDF, charts, provenance table | One authored source, rendered twice — the two can't disagree |
 
 ## The numbers, and where they come from
@@ -130,8 +137,58 @@ data/
   activity/      # the monthly activity extract
   factors/       # the cited factor register
   stack.json     # stack + meteorology for the dispersion section
-tests/           # pytest: validation, arithmetic, physics, report, PDF, pipeline
+tests/           # pytest: validation, arithmetic, physics, report, PDF, scenario, pipeline
 ```
+
+## Scenario analysis: is a fall a reduction?
+
+A total that drops is not automatically a reduction. Part of any year-on-year
+change comes from an emission factor being republished, not from anything the
+plant did — and a report showing only totals cannot tell the two apart.
+
+```bash
+ghg scenario --out out
+```
+
+Every source's change is split into three terms that sum exactly to the observed
+difference:
+
+```
+activity_effect = (Q_new - Q_old) x EF_old      what the plant consumed
+factor_effect   = Q_old x (EF_new - EF_old)     what the register said
+interaction     = (Q_new - Q_old) x (EF_new - EF_old)
+```
+
+On the shipped data that matters:
+
+| Effect | Grid electricity | Reading |
+|---|---:|---|
+| Activity | **+158.21 t** | consumption rose 7.5% |
+| Factor | **−130.25 t** | grid factor fell 6.1% (0.6592 → 0.6187) |
+| Interaction | −9.72 t | |
+| **Net** | **+18.24 t** | looks like a 0.9% rise |
+
+The naive headline, "electricity emissions up 0.9%", hides two opposite moves of
+an order of magnitude more. One is the plant growing; the other is Vietnam's grid
+decarbonising. Only the first is something the operator can act on.
+
+### Both Scope 2 figures, never summed
+
+The GHG Protocol Scope 2 Guidance requires a location-based and a market-based
+figure where contractual instruments exist. They answer different questions:
+
+| Method | Answers |
+|---|---|
+| Location-based | what intensity is the grid I draw from? |
+| Market-based | what did the contracts I hold actually buy? |
+
+```bash
+ghg scenario --instrument "wind PPA" 1200 0.0 --out out
+```
+
+The model refuses instruments covering more electricity than was consumed — that
+is how a market-based figure gets gamed — and says plainly when no instruments
+exist that the market figure is not a reduction.
 
 ## How the dispersion model was verified
 
@@ -196,6 +253,14 @@ pip install -e ".[dev]"
 ghg inventory --out out
 pytest -q
 ```
+
+### Tests and CI
+
+`pytest tests/ --cov=ghg` runs 102 checks at 96% coverage. GitHub Actions runs
+lint, the coverage gate (90% floor), the full pipeline, the Docker build and the
+in-image test suite on every push, plus a stale-report check that regenerates the
+report and diffs its total against the committed one — so the README cannot drift
+from the code.
 
 ### Ad-hoc dispersion
 
