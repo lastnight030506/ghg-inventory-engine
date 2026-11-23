@@ -1,0 +1,14 @@
+{
+  "name": "Main process stack",
+  "note": "Mid-size steam-raising stack with heat-treatment exhaust. Inputs, not results: the pipeline computes concentrations from them.",
+  "height_m": 30.0,
+  "diameter_m": 2.0,
+  "exit_velocity_ms": 12.0,
+  "exit_temperature_k": 400.0,
+  "ambient_temperature_k": 293.0,
+  "emission_rate_gs": 25.0,
+  "wind_speed_10m_ms": 3.0,
+  "stability": "D",
+  "mixing_height_m": 800.0,
+  "report_distance_m": 500.0
+}

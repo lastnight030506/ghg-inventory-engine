@@ -1,0 +1,10 @@
+activity_source,scope,gas,emission_factor,factor_unit_denominator,factor_mass_unit,citation,publication_year
+grid_electricity,2,CO2e,0.6187,kWh,kg,"Vietnam grid emission factor, data year 2024: 0.6187 tCO2/MWh = 0.6187 kgCO2/kWh, announced by the Dept. of Climate Change under the Ministry of Agriculture and Environment, Official Letter dated 30 Sep 2026; location-based; latest official value (no 2025 factor published)",2024
+diesel_furnace,1,CO2,2.6765,L,kg,"IPCC 2006 Guidelines Vol.2 Ch.1 Table 1.4 (74100 kg CO2/TJ) x Ch.1 Table 1.2 NCV 43.0 TJ/Gg x density 0.84 kg/L (EN 590 mid-range)",2006
+diesel_furnace,1,CH4_non_fossil,0.000361,L,kg,"IPCC 2006 Vol.2 Ch.2 Table 2.3 manufacturing/construction (10 kg CH4/TJ) x NCV 43.0 TJ/Gg x 0.84 kg/L; non-fossil GWP per GHG Protocol GWP guidance (combustion)",2006
+diesel_furnace,1,N2O,0.0000217,L,kg,"IPCC 2006 Vol.2 Ch.2 Table 2.3 manufacturing/construction (0.6 kg N2O/TJ) x NCV 43.0 TJ/Gg x 0.84 kg/L",2006
+coal_boiler,1,CO2,2440.68,t,kg,"IPCC 2006 Vol.2 Ch.1 Table 1.4 (94600 kg CO2/TJ) x Ch.1 Table 1.2 NCV 25.8 TJ/Gg, other bituminous coal",2006
+coal_boiler,1,CH4_non_fossil,0.258,t,kg,"IPCC 2006 Vol.2 Ch.2 Table 2.3 manufacturing/construction (10 kg CH4/TJ) x NCV 25.8 TJ/Gg, other bituminous coal; non-fossil GWP per GHG Protocol GWP guidance (combustion)",2006
+coal_boiler,1,N2O,0.0387,t,kg,"IPCC 2006 Vol.2 Ch.2 Table 2.3 manufacturing/construction (1.5 kg N2O/TJ) x NCV 25.8 TJ/Gg, other bituminous coal",2006
+inbound_freight_road,3,CO2e,0.105,tkm,kg,"GLEC Framework v3.0 / UK DESNZ 2024 freight conversion factors, road HGV articulated (>33 t), average laden, tank-to-wheel",2024
+inbound_freight_sea,3,CO2e,0.0161,tkm,kg,"GLEC Framework v3.0 / UK DESNZ 2024 freight conversion factors, container ship 8000-12000 TEU, average laden, tank-to-wheel",2024
