@@ -22,6 +22,21 @@ uid 10001 and your own user cannot overwrite it on the next run.
 
 ---
 
+## What the output looks like
+
+Committed in [`out/`](out/) so you can read the deliverable without building it:
+
+- [`emissions_report.md`](out/emissions_report.md) / [`emissions_report.pdf`](out/emissions_report.pdf) — the full report
+- [`plume_footprint.png`](out/plume_footprint.png) — the downwind concentration map
+- [`scope_breakdown.png`](out/scope_breakdown.png) — scope totals
+- [`monthly_trend.png`](out/monthly_trend.png) — monthly series
+
+![Downwind ground-level concentration footprint](out/plume_footprint.png)
+
+The headline: **3,737 tCO₂e** for the year — 36.4% Scope 1, 57.2% Scope 2, 6.4%
+Scope 3 — and a peak ground-level concentration of **340 µg/m³ at 811 m**
+downwind, from a 25 g/s release at a 30 m stack in neutral air.
+
 ## What it does
 
 | Stage | What happens | Why it is built this way |
