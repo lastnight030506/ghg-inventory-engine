@@ -68,7 +68,7 @@ def test_pdf_text_is_stable_across_regeneration(monkeypatch, tmp_path):
     )
     text = build_markdown(inventory, period="2025", site="Plant")
 
-    from pypdf import PdfReader
+    PdfReader = pytest.importorskip("pypdf").PdfReader
 
     first = markdown_to_pdf(text, tmp_path / "a.pdf")
     second = markdown_to_pdf(text, tmp_path / "b.pdf")

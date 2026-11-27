@@ -13,6 +13,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# hatchling needs the metadata to build; the package itself is installed from src.
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY tests ./tests
@@ -20,7 +21,9 @@ COPY tests ./tests
 # under ghg/data/, so the installed tool is self-contained. Copying it afterwards
 # would leave the wheel empty and rely on the CWD fallback instead.
 COPY data ./data
-RUN pip install --no-cache-dir . && pip install --no-cache-dir pytest
+# The dev extras, not a bare pytest: the suite imports pypdf to compare PDF
+# text, and a partial install made that a red run in CI instead of a code bug.
+RUN pip install --no-cache-dir ".[dev]"
 
 # Non-root. The bind-mounted output directory cannot inherit permissions from the
 # image, so the documented run command passes `--user $(id -u):$(id -g)`; that
