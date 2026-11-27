@@ -16,9 +16,11 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY tests ./tests
-RUN pip install --no-cache-dir . && pip install --no-cache-dir pytest
-
+# data must be present at build time: pyproject force-includes it into the wheel
+# under ghg/data/, so the installed tool is self-contained. Copying it afterwards
+# would leave the wheel empty and rely on the CWD fallback instead.
 COPY data ./data
+RUN pip install --no-cache-dir . && pip install --no-cache-dir pytest
 
 # Non-root. The bind-mounted output directory cannot inherit permissions from the
 # image, so the documented run command passes `--user $(id -u):$(id -g)`; that

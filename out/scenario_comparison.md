@@ -2,7 +2,7 @@
 
 **2024 → 2025**  
 **Total change:** +139.96 tCO₂e (+3.9%)  
-**Generated:** 2026-11-23 07:14 UTC by `ghg-inventory-engine`
+**Generated:** 2025-12-01 00:00 UTC by `ghg-inventory-engine`
 
 A total that fell is not automatically a reduction. Part of any year-on-year change comes from the emission factor being republished, not from anything the plant did. The decomposition below separates the two.
 

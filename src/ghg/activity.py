@@ -8,11 +8,12 @@ which is exactly the failure mode manual spreadsheets have.
 
 from __future__ import annotations
 
-import csv
 import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
+from ._csv import CsvFormatError, read_rows
 
 PERIOD_RE = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
 
@@ -107,17 +108,10 @@ def load_activity(path: str | Path) -> list[ActivityRecord]:
     if not path.exists():
         raise ActivityError(f"activity file not found: {path}")
 
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle)
-        header = tuple(reader.fieldnames or ())
-        missing = [name for name in REQUIRED_COLUMNS if name not in header]
-        if missing:
-            raise ActivityError(
-                f"{path.name}: missing required columns {missing}; got {list(header)}"
-            )
-
-        records: list[ActivityRecord] = []
-        for line, row in enumerate(reader, start=2):
+    records: list[ActivityRecord] = []
+    try:
+        rows = read_rows(path, REQUIRED_COLUMNS)
+        for line, row in rows:
             records.append(
                 ActivityRecord(
                     period=parse_period(row["period"], line=line),
@@ -128,6 +122,10 @@ def load_activity(path: str | Path) -> list[ActivityRecord]:
                     line=line,
                 )
             )
+    except CsvFormatError as exc:
+        # Re-raised as ActivityError so callers catch one exception type for "this
+        # file cannot be trusted", whether the problem is structural or a value.
+        raise ActivityError(str(exc)) from None
 
     if not records:
         raise ActivityError(f"{path.name}: no activity rows found")

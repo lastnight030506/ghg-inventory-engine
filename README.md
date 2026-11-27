@@ -1,8 +1,9 @@
 # GHG Inventory & Dispersion Engine
 
 [![ci](https://github.com/lastnight030506/ghg-inventory-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/lastnight030506/ghg-inventory-engine/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-102%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-130%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-96%25-brightgreen)
+![mypy](https://img.shields.io/badge/mypy-clean-blue)
 ![python](https://img.shields.io/badge/python-3.12-blue)
 
 A GHG inventory tool for an exporting manufacturer that has to answer **two
@@ -254,13 +255,35 @@ ghg inventory --out out
 pytest -q
 ```
 
+### Reproducible output
+
+The report stamps its own generation time, so two runs over the same data used to
+differ and the committed artifact could never be verified. The timestamp now comes
+from `SOURCE_DATE_EPOCH` (the reproducible-builds convention):
+
+```bash
+SOURCE_DATE_EPOCH=1764547200 ghg inventory --out out
+```
+
+With it pinned, the Markdown and the PNGs are byte-identical across runs and
+machines, and so is the PDF **on the same system**.
+
+The PDF is not byte-identical *across* systems, and pretending otherwise would be
+wrong: it embeds a subset of the system DejaVu font, and different distributions
+ship different DejaVu builds (the host and the slim Docker image here differ; the
+embedded font makes the file about 5 KB larger). The rendered *text* and page count
+are identical everywhere — only the embedded font bytes differ. CI therefore
+compares the Markdown byte for byte and the PDF by text and page count, which is
+what actually has to stay stable.
+
 ### Tests and CI
 
-`pytest tests/ --cov=ghg` runs 102 checks at 96% coverage. GitHub Actions runs
-lint, the coverage gate (90% floor), the full pipeline, the Docker build and the
-in-image test suite on every push, plus a stale-report check that regenerates the
-report and diffs its total against the committed one — so the README cannot drift
-from the code.
+`pytest tests/ --cov=ghg` runs 130 checks at 96% coverage. GitHub Actions runs
+lint, mypy, the coverage gate (90% floor), the full pipeline, the Docker build and
+the in-image test suite on every push. A separate job builds the wheel, installs it
+into a clean venv and runs the CLI from a directory with no `data/` of its own, so
+the packaging cannot break silently. A final job regenerates the reports and diffs
+them byte for byte against the committed copies.
 
 ### Ad-hoc dispersion
 

@@ -6,6 +6,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A single pinned timestamp for every job. Reports stamp their generation time, so
+# without this no artifact could be diffed against the committed one.
+env:
+  SOURCE_DATE_EPOCH: "1764547200"
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -19,10 +24,13 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]" ruff pytest-cov
+          pip install -e ".[dev]"
 
       - name: Lint
         run: ruff check src/ tests/
+
+      - name: Type check
+        run: mypy src/ghg
 
       - name: Test with coverage gate
         run: pytest tests/ --cov=ghg --cov-report=term-missing --cov-fail-under=90
@@ -54,6 +62,34 @@ jobs:
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/out:/app/out" ghg-engine
           test -s out/emissions_report.pdf
 
+  # Guards the packaging, not the code: the wheel must carry its own data, or an
+  # installed `ghg` only works from the repo root. This failed once and was
+  # invisible because every other check runs from the checkout.
+  installed-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the built wheel into a clean environment
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install dist/*.whl
+      - name: Data is inside the wheel
+        run: |
+          test -d /tmp/venv/lib/python3.12/site-packages/ghg/data/activity
+          test -f /tmp/venv/lib/python3.12/site-packages/ghg/data/factors/emission_factors.csv
+      - name: Runs from a directory with no data/ of its own
+        run: |
+          mkdir -p /tmp/elsewhere && cd /tmp/elsewhere
+          /tmp/venv/bin/ghg inventory --out /tmp/elsewhere/out
+          test -s /tmp/elsewhere/out/emissions_report.pdf
+          /tmp/venv/bin/ghg scenario --out /tmp/elsewhere/out
+          test -s /tmp/elsewhere/out/scenario_comparison.md
+
   # The README's headline numbers are regenerated from the committed data on every
   # push and diffed against what is committed. If a factor edit changes the total,
   # this fails rather than letting the docs drift from the code.
@@ -64,17 +100,51 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e .
+      - run: pip install -e . pypdf
       - name: Regenerate and compare
+        # The Markdown is pure text, so with the timestamp pinned it is
+        # byte-identical across runs and machines: compared exactly.
+        #
+        # The PDF is not, and cannot be. It embeds a subset of the system DejaVu
+        # font, whose bytes differ between distributions (verified: the host and
+        # the slim image ship different DejaVu builds), and fpdf2's subset tag
+        # varies with its own version. Byte-comparing it would fail on every
+        # dependency bump for no diagnostic value, so its text and page count are
+        # compared instead. Content, not container bytes, is what must not drift.
         run: |
           ghg inventory --out /tmp/fresh
+          ghg scenario --out /tmp/fresh
+
+          for f in emissions_report.md scenario_comparison.md; do
+            if ! cmp -s "/tmp/fresh/$f" "out/$f"; then
+              echo "::error::$f is stale — run 'make run scenario' and commit out/"
+              diff "out/$f" "/tmp/fresh/$f" | head -40 || true
+              exit 1
+            fi
+          done
+          echo "Markdown reports match a fresh generation byte for byte"
+
+          # Extracted in Python rather than with poppler, which the runner does
+          # not guarantee; pypdf is a test-only dependency and needs no system
+          # packages.
           python - <<'PY'
-          import re, sys, pathlib
-          def total(p):
-              text = pathlib.Path(p).read_text(encoding="utf-8")
-              return re.search(r"\*\*Total emissions:\*\* ([\d,]+\.\d+)", text).group(1)
-          fresh, committed = total("/tmp/fresh/emissions_report.md"), total("out/emissions_report.md")
-          print(f"fresh={fresh} committed={committed}")
-          if fresh != committed:
-              sys.exit(f"committed report is stale: regenerate out/ (fresh {fresh} vs committed {committed})")
+          import pathlib, sys
+          from pypdf import PdfReader
+
+          def pages_and_text(path):
+              reader = PdfReader(path)
+              return len(reader.pages), "\n".join(p.extract_text() or "" for p in reader.pages)
+
+          fresh_pages, fresh_text = pages_and_text("/tmp/fresh/emissions_report.pdf")
+          old_pages, old_text = pages_and_text("out/emissions_report.pdf")
+
+          if fresh_pages != old_pages:
+              sys.exit(f"PDF page count changed: {old_pages} -> {fresh_pages}")
+          if fresh_text.strip() != old_text.strip():
+              for i, (a, b) in enumerate(zip(old_text.splitlines(), fresh_text.splitlines())):
+                  if a != b:
+                      sys.exit(f"PDF text differs at line {i}: {a!r} vs {b!r}")
+              sys.exit("PDF text differs in length")
+
+          print(f"PDF text and page count match ({fresh_pages} pages)")
           PY

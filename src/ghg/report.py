@@ -8,9 +8,9 @@ never reached this point.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from pathlib import Path
 
+from .clock import generation_stamp
 from .dispersion import PlumeState
 from .inventory import Inventory
 
@@ -56,7 +56,7 @@ def build_markdown(
     add(f"**Total emissions:** {_fmt_t(total)} tCO₂e  ")
     add(f"**GWP basis:** {inventory.gwp_standard}  ")
     add(
-        f"**Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')} "
+        f"**Generated:** {generation_stamp()} "
         "by `ghg-inventory-engine`"
     )
     add("")
@@ -168,7 +168,7 @@ def build_markdown(
             add(f"![Downwind concentration footprint]({chart_footprint})")
             add("")
 
-    if footprint_summary:
+    if footprint_summary and plume is not None:
         add("### Concentration by distance")
         add("")
         add("| Metric | Value |")
@@ -275,7 +275,7 @@ def build_scenario_markdown(
     add(f"**{year_old} → {year_new}**  ")
     add(f"**Total change:** {delta:+,.2f} tCO₂e ({pct:+.1%})  ")
     add(
-        f"**Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')} "
+        f"**Generated:** {generation_stamp()} "
         "by `ghg-inventory-engine`"
     )
     add("")

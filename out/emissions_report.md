@@ -3,7 +3,7 @@
 **Reporting period:** 2025-01 to 2025-12  
 **Total emissions:** 3,737.05 tCO₂e  
 **GWP basis:** IPCC AR6 WG1, 100-year (Table 7.15)  
-**Generated:** 2026-11-23 07:14 UTC by `ghg-inventory-engine`
+**Generated:** 2025-12-01 00:00 UTC by `ghg-inventory-engine`
 
 This report is generated from an activity-data extract joined to a cited emission-factor register. It is a calculation, not an assurance opinion: the boundary, the factor edition and the activity data are the operator's to defend.
 

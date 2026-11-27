@@ -9,10 +9,11 @@ quietly defaulted is worse than a crash.
 
 from __future__ import annotations
 
-import csv
 import math
 from dataclasses import dataclass
 from pathlib import Path
+
+from ._csv import CsvFormatError, read_rows
 
 # IPCC AR6 WG1 Table 7.15, 100-year horizon. Do not extend from memory: adding a
 # gas is a documented change carrying its own citation and test.
@@ -87,14 +88,9 @@ def load_factors(path: str | Path) -> dict[str, list[EmissionFactor]]:
     by_source: dict[str, list[EmissionFactor]] = {}
     seen: set[tuple[str, str]] = set()
 
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle)
-        header = tuple(reader.fieldnames or ())
-        missing = [name for name in FACTOR_COLUMNS if name not in header]
-        if missing:
-            raise FactorError(f"{path.name}: missing columns {missing}; got {list(header)}")
-
-        for line, row in enumerate(reader, start=2):
+    try:
+        rows = read_rows(path, FACTOR_COLUMNS)
+        for line, row in rows:
             _require(row, FACTOR_COLUMNS, line, path)
 
             gas = row["gas"].strip()
@@ -112,9 +108,9 @@ def load_factors(path: str | Path) -> dict[str, list[EmissionFactor]]:
                 )
 
             try:
-                scope = int(row["scope"])
-                year = int(row["publication_year"])
-                value = float(row["emission_factor"])
+                scope = int(row["scope"].strip())
+                year = int(row["publication_year"].strip())
+                value = float(row["emission_factor"].strip().replace(",", ""))
             except ValueError as exc:
                 raise FactorError(f"{path.name} line {line}: non-numeric field ({exc})") from None
 
@@ -148,6 +144,10 @@ def load_factors(path: str | Path) -> dict[str, list[EmissionFactor]]:
                     publication_year=year,
                 )
             )
+    except CsvFormatError as exc:
+        # Same exception type as a bad value: the caller asks "is this register
+        # usable", not "was the problem structural or semantic".
+        raise FactorError(str(exc)) from None
 
     if not by_source:
         raise FactorError(f"{path.name}: register is empty")

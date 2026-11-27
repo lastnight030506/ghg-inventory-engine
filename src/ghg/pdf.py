@@ -12,8 +12,11 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import cast
 
 from fpdf import FPDF
+
+from .clock import generation_time
 
 _FONT_CANDIDATES = {
     "DejaVuSans": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -76,7 +79,7 @@ def _write_table(pdf: _PDF, rows: list[str], available_width: float) -> None:
     # source name and eight short numbers reads as garbage in equal columns.
     # The sqrt keeps one long cell from stealing the page.
     def longest(index: int) -> float:
-        values = [len(_snippet_to_cell(row[index])) for row in body]
+        values = [float(len(_snippet_to_cell(row[index]))) for row in body]
         # The header gets a bonus: a wrapped header ("GWP10 / 0") is worse than a
         # slightly wide column, so it should win width against short numbers.
         values.append(len(_snippet_to_cell(header[index])) * 1.25)
@@ -105,10 +108,16 @@ def _write_table(pdf: _PDF, rows: list[str], available_width: float) -> None:
         nonlocal pdf
         face = "DejaVuSans-Bold" if is_header else "DejaVuSans"
         pdf.set_font(face, size=font_size)
+        # dry_run + HEIGHT returns the cell height as a float. fpdf2 types the
+        # return as a union of every output mode, so the cast is what records the
+        # documented behaviour of this specific pair of arguments.
         heights = [
-            pdf.multi_cell(
-                widths[i] - padding, line_h, _snippet_to_cell(row_cells[i]),
-                align="L", dry_run=True, output="HEIGHT",
+            cast(
+                float,
+                pdf.multi_cell(
+                    widths[i] - padding, line_h, _snippet_to_cell(row_cells[i]),
+                    align="L", dry_run=True, output="HEIGHT",
+                ),
             )
             for i in range(ncols)
         ]
@@ -146,6 +155,10 @@ def _write_table(pdf: _PDF, rows: list[str], available_width: float) -> None:
 def markdown_to_pdf(markdown: str, path: str | Path, *, base_dir: str | Path | None = None) -> Path:
     base = Path(base_dir) if base_dir else Path.cwd()
     pdf = _PDF(format="A4")
+    # fpdf2 defaults the PDF CreationDate to the wall clock, which makes two runs
+    # over identical text produce different bytes. Pinning it to the same clock the
+    # report text uses keeps the artifact reproducible and diffable.
+    pdf.set_creation_date(generation_time())
     _setup(pdf)
     width = pdf.w - pdf.l_margin - pdf.r_margin
 

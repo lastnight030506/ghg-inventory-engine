@@ -15,6 +15,7 @@ import json
 import sys
 from pathlib import Path
 
+from . import paths
 from .activity import ActivityError, load_activity
 from .dispersion import PlumeState, Stack, concentration_grid
 from .factors import MASS_TO_KG, FactorError, load_factors
@@ -23,8 +24,9 @@ from .plume_map import plume_footprint
 from .report import build_markdown, build_scenario_markdown, write_markdown
 from .scenario import ContractualInstrument
 
-DEFAULT_ACTIVITY = "data/activity/activity_2025.csv"
-DEFAULT_FACTORS = "data/factors/emission_factors.csv"
+# Defaults are resolved lazily: a missing data directory must become a clean
+# error from the command that needs it, not an ImportError when the module is
+# imported by a test or a library user.
 DEFAULT_OUT = "out"
 
 
@@ -35,8 +37,8 @@ def _run_inventory(args: argparse.Namespace) -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    records = load_activity(args.activity)
-    register = load_factors(args.factors)
+    records = load_activity(args.activity or paths.default_activity())
+    register = load_factors(args.factors or paths.default_factors())
     inventory = build_inventory(records, register)
 
     # Charts and the report live together; the Markdown references the PNGs by
@@ -49,8 +51,11 @@ def _run_inventory(args: argparse.Namespace) -> int:
     note = None
     footprint_summary = None
     footprint_png = None
-    if args.stack_config:
-        plume = _plume_from_config(Path(args.stack_config))
+    stack_config = args.stack_config
+    if stack_config is None:
+        stack_config = paths.default_stack()
+    if stack_config:
+        plume = _plume_from_config(Path(stack_config))
         footprint_png, footprint_summary = plume_footprint(
             plume, out / "plume_footprint.png", max_downwind_m=args.footprint_km * 1000.0
         )
@@ -138,10 +143,10 @@ def _run_scenario(args: argparse.Namespace) -> int:
     """Year-over-year decomposition plus the Scope 2 dual figure."""
     from .scenario import Scope2Dual, annual_quantity, classify_change, decompose
 
-    records_old = load_activity(args.activity_old)
-    records_new = load_activity(args.activity_new)
-    register_old = load_factors(args.factors_old)
-    register_new = load_factors(args.factors_new)
+    records_old = load_activity(args.activity_old or paths.default_activity_previous())
+    records_new = load_activity(args.activity_new or paths.default_activity())
+    register_old = load_factors(args.factors_old or paths.default_factors_previous())
+    register_new = load_factors(args.factors_new or paths.default_factors())
 
     inv_old = build_inventory(records_old, register_old)
     inv_new = build_inventory(records_new, register_new)
@@ -219,7 +224,7 @@ def _effective_factor(register, source: str) -> float:
 
 
 def _show_factors(args: argparse.Namespace) -> int:
-    register = load_factors(args.factors)
+    register = load_factors(args.factors or paths.default_factors())
     for source, factors in sorted(register.items()):
         print(f"{source}")
         for factor in factors:
@@ -237,10 +242,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     inv = sub.add_parser("inventory", help="calculate emissions and write the report")
-    inv.add_argument("--activity", default=DEFAULT_ACTIVITY)
-    inv.add_argument("--factors", default=DEFAULT_FACTORS)
+    inv.add_argument("--activity", default=None, help="default: bundled activity extract")
+    inv.add_argument("--factors", default=None, help="default: bundled factor register")
     inv.add_argument("--out", default=DEFAULT_OUT)
-    inv.add_argument("--stack-config", default="data/stack.json",
+    inv.add_argument("--stack-config", default=None,
                      help="stack/dispersion parameters to embed in the report")
     inv.add_argument("--footprint-km", type=float, default=3.0,
                      help="downwind extent of the plume footprint map, km")
@@ -260,7 +265,7 @@ def build_parser() -> argparse.ArgumentParser:
     disp.set_defaults(func=_run_dispersion)
 
     fac = sub.add_parser("factors", help="print the factor register with citations")
-    fac.add_argument("--factors", default=DEFAULT_FACTORS)
+    fac.add_argument("--factors", default=None)
     fac.set_defaults(func=_show_factors)
 
     scen = sub.add_parser(
@@ -272,10 +277,10 @@ def build_parser() -> argparse.ArgumentParser:
             "side by side. The two Scope 2 figures are never summed."
         ),
     )
-    scen.add_argument("--activity-old", default="data/activity/activity_2024.csv")
-    scen.add_argument("--activity-new", default="data/activity/activity_2025.csv")
-    scen.add_argument("--factors-old", default="data/factors/emission_factors_2024.csv")
-    scen.add_argument("--factors-new", default=DEFAULT_FACTORS)
+    scen.add_argument("--activity-old", default=None)
+    scen.add_argument("--activity-new", default=None)
+    scen.add_argument("--factors-old", default=None)
+    scen.add_argument("--factors-new", default=None)
     scen.add_argument("--out", default=DEFAULT_OUT)
     scen.add_argument(
         "--instrument",
